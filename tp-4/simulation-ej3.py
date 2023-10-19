@@ -90,7 +90,7 @@ def simular_sistema(n):
 # Simulación para diferentes números de terminales
 results = []
 
-for n in range(10, 81, 10):
+for n in range(5, 81, 5):
     result = simular_sistema(n)
     results.append(result)
 
