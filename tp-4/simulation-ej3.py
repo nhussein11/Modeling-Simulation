@@ -27,11 +27,14 @@ class Terminal:
                 with self.cpu.request() as req:
                     yield req
                     yield self.env.timeout(processing_time)
+                    # El tiempo de servicio del trabajo se reduce por el tiempo de procesamiento en la CPU
                     service_time -= processing_time
 
                     if service_time > 0:
+                        # El trabajo no terminó de procesarse, se vuelve a encolar, timeout de 0.015 que simula el tiempo de swap
                         yield self.env.timeout(0.015)
                     else:
+                        # El trabajo terminó de procesarse, se calcula el tiempo de respuesta y se agrega a la lista de tiempos de respuesta
                         response_time = self.env.now - arrival_time
                         self.response_times.append(response_time)
 

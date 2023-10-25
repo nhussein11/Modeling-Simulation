@@ -34,6 +34,7 @@ class Cajero:
 
 
 def simular_banco(num_cajeros, env):
+    # Inicialización de las colas y cajeros
     global cajeros
     colas = [[] for _ in range(num_cajeros)]
     cajeros = [Cajero(env, i, 4.5, colas[i]) for i in range(num_cajeros)]
