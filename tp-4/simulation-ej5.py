@@ -1,70 +1,89 @@
-import simpy
 import random
+import simpy
 
-# Definir los tiempos de servicio para cada tipo de pieza y estación
-TIEMPOS_SERVICIO = [
-    [
-        [0.50, 0.60, 0.85, 0.50],  # Estación 1 para tipo 1, 2, 5
-        [1.10, 0.80],  # Estación 1 para tipo 2
-        [1.20, 0.25, 0.70, 0.90, 1.00],  # Estación 1 para tipo 3
-    ],
-    [
-        [0.70, 0.80, 0.95, 1.00],  # Estación 2 para tipo 1, 2, 5
-        [1.10, 0.90],  # Estación 2 para tipo 2
-        [1.25, 1.30, 1.35, 1.40, 1.45],  # Estación 2 para tipo 3
-    ],
-    # ... Definir tiempos de servicio para las demás estaciones
-]
+# Definir los parámetros del sistema
+NUM_DIAS = 365
+NUM_HORAS_DIA = 8
+
+# Definir las estaciones y el número de máquinas en cada estación
+NUM_MAQUINAS = [3, 2, 4, 3, 1]
+
+# Definir los tiempos de servicio medios para cada tipo de trabajo y cada tarea
+TIEMPOS_SERVICIO = {
+    1: [0.5, 0.6, 0.85, 0.5],
+    2: [1.1, 0.8, 0.75],
+    3: [1.2, 0.25, 0.7, 0.9, 1.0],
+}
+
+# Definir la distribución de llegada de piezas
+TIEMPO_ENTRE_ARRIBOS = 0.25  # Media en horas
+
+# Variables para métricas
+total_retraso = 0
+total_utilizacion_maquinas = [0 for _ in range(len(NUM_MAQUINAS))]
+total_piezas_en_cola = 0
+total_piezas_procesadas = {1: 0, 2: 0, 3: 0}
 
 
-class Pieza:
-    def __init__(self, env, tipo):
+# Clase para el sistema de fabricación
+class SistemaFabricacion:
+    def __init__(self, env):
         self.env = env
-        self.tipo = tipo
+        self.colas = [simpy.Store(env) for _ in range(len(NUM_MAQUINAS))]
+        self.utilizacion_maquinas = [0 for _ in range(len(NUM_MAQUINAS))]
+
+    def procesar_pieza(self, tipo):
+        estaciones = {1: [2, 0, 1, 4], 2: [3, 0, 2], 3: [1, 4, 0, 3, 2]}
+        ruta = estaciones[tipo]
+        retraso_inicial = self.env.now
+        for idx, tarea in enumerate(ruta):
+            yield self.env.timeout(random.expovariate(1 / TIEMPOS_SERVICIO[tipo][idx]))
+            with self.colas[tarea].get() as maquina:
+                yield maquina
+        retraso_final = self.env.now - retraso_inicial
+        global total_retraso
+        total_retraso += retraso_final
+        total_piezas_procesadas[tipo] += 1
+
+    def llegada_pieza(self, tipo):
+        while True:
+            yield self.env.timeout(random.expovariate(1 / TIEMPO_ENTRE_ARRIBOS))
+            self.env.process(self.procesar_pieza(tipo))
 
 
-class Estacion:
-    def __init__(self, env, id, num_maquinas):
-        self.env = env
-        self.id = id
-        self.maquinas = simpy.Resource(env, capacity=num_maquinas)
-        self.cola = simpy.Store(env)  # Usar simpy.Store para representar una cola
-
-    def procesar_pieza(self, pieza):
-        tiempo_servicio = random.choice(TIEMPOS_SERVICIO[self.id - 1][pieza.tipo - 1])
-        yield self.env.timeout(tiempo_servicio)
-
-
-def llegada_piezas(env, estaciones):
-    while True:
-        tipo_pieza = random.choices([1, 2, 3], weights=[0.3, 0.5, 0.2])[0]
-        pieza = Pieza(env, tipo_pieza)
-        estacion_id = random.choice([0, 1, 2])
-        env.process(procesar_en_estacion(env, pieza, estacion_id, estaciones))
-        tiempo_entre_llegadas = random.expovariate(1 / 0.25)
-        yield env.timeout(tiempo_entre_llegadas)
-
-
-def procesar_en_estacion(env, pieza, estacion_id, estaciones):
-    estacion = estaciones[estacion_id]
-    with estacion.maquinas.request() as req:
-        yield req
-        if len(estacion.cola.items) > 0:
-            print(
-                f"Tiempo {env.now}: Pieza de tipo {pieza.tipo} en cola de estación {estacion_id + 1}"
-            )
-        yield env.process(estacion.procesar_pieza(pieza))
-        print(
-            f"Tiempo {env.now}: Pieza de tipo {pieza.tipo} terminada en estación {estacion_id + 1}"
-        )
-
-
+# Simulación
 env = simpy.Environment()
-num_maquinas_por_estacion = [3, 2, 4]  # Número de máquinas por estación
-estaciones = [
-    Estacion(env, i, num_maquinas_por_estacion[i])
-    for i in range(len(num_maquinas_por_estacion))
-]
+sistema = SistemaFabricacion(env)
 
-env.process(llegada_piezas(env, estaciones))
-env.run(until=365 * 24)
+for i in range(len(NUM_MAQUINAS)):
+    for j in range(NUM_MAQUINAS[i]):
+        sistema.colas[i].put(env.event())
+
+for tipo in range(1, 4):
+    env.process(sistema.llegada_pieza(tipo))
+
+env.run(until=NUM_DIAS * NUM_HORAS_DIA)
+
+# Calcular métricas de desempeño
+for i in range(len(NUM_MAQUINAS)):
+    total_utilizacion_maquinas[i] = sistema.utilizacion_maquinas[i] / (
+        NUM_DIAS * NUM_HORAS_DIA
+    )
+    total_piezas_en_cola += sum(len(cola.items) for cola in sistema.colas)
+
+# Calcular retraso promedio en las colas
+total_piezas_procesadas_sum = sum(total_piezas_procesadas.values())
+retraso_promedio = (
+    total_retraso / total_piezas_procesadas_sum
+    if total_piezas_procesadas_sum > 0
+    else 0
+)
+
+# Calcular número promedio de piezas en cola
+promedio_piezas_en_cola = total_piezas_en_cola / (NUM_DIAS * NUM_HORAS_DIA)
+
+# Mostrar resultados
+print(f"Retraso promedio en las colas: {retraso_promedio:.2f} horas")
+print(f"Utilización promedio de las máquinas: {total_utilizacion_maquinas}")
+print(f"Número promedio de piezas en cola: {promedio_piezas_en_cola:.2f}")
+print(f"Número total de piezas procesadas: {sum(total_piezas_procesadas.values())}")
