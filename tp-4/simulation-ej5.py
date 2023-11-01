@@ -66,6 +66,7 @@ env.run(until=NUM_DIAS * NUM_HORAS_DIA)
 
 # Calcular métricas de desempeño
 for i in range(len(NUM_MAQUINAS)):
+    # Aca el linter me esta tirando un problema pero AFAIK creo que no pasa nada (TODO: chequear luego en detalle)
     total_utilizacion_maquinas[i] = sistema.utilizacion_maquinas[i] / (
         NUM_DIAS * NUM_HORAS_DIA
     )
